@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>龙珠连连看 · Dragon Ball Link</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
+  body {
+    font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+    background: radial-gradient(ellipse at top, #1a2a6c 0%, #0b1450 50%, #050a30 100%);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 16px;
+    color: #fff;
+    overflow-x: hidden;
+  }
+  /* 星空 */
+  .stars { position: fixed; inset: 0; pointer-events: none; z-index: 0; }
+  .star { position: absolute; background: #fff; border-radius: 50%; animation: twinkle 2s infinite; }
+  @keyframes twinkle { 0%,100% { opacity: .2; } 50% { opacity: .9; } }
+
+  h1 {
+    font-size: 32px; letter-spacing: 4px; z-index: 1;
+    background: linear-gradient(180deg, #ffd54d, #ff8f00);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    text-shadow: 0 0 30px rgba(255, 143, 0, .4);
+    margin-bottom: 6px;
+  }
+  .subtitle { font-size: 13px; color: #9fb3e8; margin-bottom: 14px; z-index: 1; }
+
+  /* 七龙珠进度 */
+  .dragonballs { display: flex; gap: 10px; margin-bottom: 14px; z-index: 1; }
+  .dball {
+    width: 34px; height: 34px; border-radius: 50%;
+    background: radial-gradient(circle at 32% 30%, #ffe9b0, #ffab00 55%, #e65100);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px; color: #c62828; font-weight: bold;
+    box-shadow: 0 0 4px rgba(255,171,0,.3);
+    opacity: .28; filter: grayscale(.8);
+    transition: all .5s;
+    position: relative;
+  }
+  .dball.lit {
+    opacity: 1; filter: none;
+    box-shadow: 0 0 18px 4px rgba(255, 171, 0, .75);
+    animation: ballGlow 1.6s infinite alternate;
+  }
+  @keyframes ballGlow { from { transform: scale(1); } to { transform: scale(1.12); } }
+
+  /* 信息栏 */
+  .hud { display: flex; gap: 18px; align-items: center; margin-bottom: 12px; z-index: 1; flex-wrap: wrap; justify-content: center; }
+  .hud .item {
+    background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.15);
+    border-radius: 10px; padding: 6px 14px; font-size: 14px;
+  }
+  .hud .item b { color: #ffd54d; font-size: 17px; margin-left: 4px; }
+  .btn {
+    background: linear-gradient(180deg, #ff9800, #f57c00);
+    border: none; color: #fff; font-size: 14px; font-weight: bold;
+    padding: 8px 16px; border-radius: 10px; cursor: pointer;
+    box-shadow: 0 3px 0 #e65100; transition: transform .1s;
+  }
+  .btn:active { transform: translateY(2px); box-shadow: 0 1px 0 #e65100; }
+  .btn.secondary { background: linear-gradient(180deg, #42a5f5, #1e88e5); box-shadow: 0 3px 0 #1565c0; }
+
+  /* 棋盘 */
+  #board {
+    display: grid; gap: 6px; z-index: 1;
+    background: rgba(255,255,255,.05);
+    padding: 10px; border-radius: 16px;
+    border: 1px solid rgba(255,255,255,.12);
+  }
+  .cell {
+    width: 56px; height: 56px; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 30px; cursor: pointer; position: relative;
+    background: linear-gradient(145deg, #243b8f, #16255e);
+    border: 2px solid rgba(255,255,255,.14);
+    transition: transform .12s, box-shadow .12s, opacity .3s;
+  }
+  .cell:hover:not(.empty) { transform: scale(1.08); }
+  .cell.selected {
+    border-color: #ffd54d;
+    box-shadow: 0 0 14px 3px rgba(255, 213, 77, .8);
+    transform: scale(1.1);
+  }
+  .cell.hint { animation: hintPulse .7s 3; border-color: #69f0ae; }
+  @keyframes hintPulse { 50% { box-shadow: 0 0 16px 4px rgba(105,240,174,.9); transform: scale(1.12); } }
+  .cell.empty { background: transparent; border-color: transparent; cursor: default; opacity: 0; }
+  .cell.matched { animation: vanish .35s forwards; }
+  @keyframes vanish { to { transform: scale(0) rotate(180deg); opacity: 0; } }
+  .cell.shake { animation: shake .3s; border-color: #ef5350; }
+  @keyframes shake { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+
+  /* 连线画布 */
+  #lineCanvas { position: absolute; pointer-events: none; z-index: 5; }
+
+  /* 胜利/失败遮罩 */
+  .overlay {
+    position: fixed; inset: 0; z-index: 20;
+    background: rgba(3, 8, 40, .88);
+    display: none; align-items: center; justify-content: center; flex-direction: column;
+    text-align: center; padding: 20px;
+  }
+  .overlay.show { display: flex; }
+  .shenron { font-size: 90px; animation: shenronIn 1.2s ease-out, float 3s 1.2s infinite ease-in-out; }
+  @keyframes shenronIn { from { transform: scale(0) rotate(-360deg); } to { transform: scale(1) rotate(0); } }
+  @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-14px); } }
+  .overlay h2 { font-size: 30px; color: #ffd54d; margin: 14px 0 6px; text-shadow: 0 0 20px rgba(255,213,77,.6); }
+  .overlay p { color: #c5d3f5; margin-bottom: 8px; line-height: 1.8; }
+  .overlay .btn { margin-top: 14px; font-size: 16px; padding: 12px 28px; }
+
+  .footer { margin-top: 14px; font-size: 12px; color: #7d92c9; z-index: 1; }
+
+  @media (max-width: 620px) {
+    .cell { width: 40px; height: 40px; font-size: 22px; border-radius: 9px; }
+    h1 { font-size: 24px; }
+  }
+</style>
+</head>
+<body>
+<div class="stars" id="stars"></div>
+
+<h1>龙珠连连看</h1>
+<div class="subtitle">消除全部卡牌,集齐七龙珠,召唤神龙!</div>
+
+<div class="dragonballs" id="dragonballs"></div>
+
+<div class="hud">
+  <div class="item">⏱️ 剩余时间<b id="time">300</b></div>
+  <div class="item">🏆 得分<b id="score">0</b></div>
+  <div class="item">🔥 连击<b id="combo">0</b></div>
+  <button class="btn secondary" id="hintBtn">💡 提示</button>
+  <button class="btn secondary" id="shuffleBtn">🔀 洗牌</button>
+  <button class="btn" id="restartBtn">🔄 重开</button>
+</div>
+
+<div id="boardWrap" style="position:relative; z-index:1;">
+  <div id="board"></div>
+  <canvas id="lineCanvas"></canvas>
+</div>
+
+<div class="footer">规则:点击两张相同卡牌,连线拐弯不超过 2 次即可消除</div>
+
+<div class="overlay" id="winOverlay">
+  <div class="shenron">🐉</div>
+  <h2>神龙出现了!</h2>
+  <p>你集齐了七颗龙珠!说出你的愿望吧!<br>最终得分:<b id="finalScore" style="color:#ffd54d"></b> · 用时:<b id="finalTime" style="color:#ffd54d"></b> 秒</p>
+  <button class="btn" onclick="restart()">⭐ 再许一次愿</button>
+</div>
+
+<div class="overlay" id="loseOverlay">
+  <div class="shenron">💀</div>
+  <h2>时间到…被弗利萨抢先了</h2>
+  <p>别灰心,悟空也是输了无数次才变强的!<br>最终得分:<b id="loseScore" style="color:#ffd54d"></b></p>
+  <button class="btn" onclick="restart()">💪 再战一次</button>
+</div>
+
+<script>
+// ===== 配置 =====
+const COLS = 8, ROWS = 6;          // 48 格 = 24 对
+const TIME_LIMIT = 300;
+const TILE_TYPES = [
+  { icon: '🐵', name: '悟空' }, { icon: '😤', name: '贝吉塔' },
+  { icon: '🐷', name: '乌龙' }, { icon: '🐢', name: '龟仙人' },
+  { icon: '👹', name: '比克' }, { icon: '⚡', name: '超赛' },
+  { icon: '💥', name: '气功波' }, { icon: '🍚', name: '仙豆' },
+  { icon: '☁️', name: '筋斗云' }, { icon: '🔮', name: '龙珠雷达' },
+  { icon: '🥋', name: '武道服' }, { icon: '🐲', name: '神龙' },
+];
+
+// ===== 状态 =====
+let grid = [];            // grid[r][c] = typeIndex | -1(空)
+let selected = null;
+let score = 0, combo = 0, timeLeft = TIME_LIMIT, timerId = null;
+let pairsCleared = 0, totalPairs = 0;
+let busy = false;
+
+// ===== 星空背景 =====
+(function () {
+  const wrap = document.getElementById('stars');
+  for (let i = 0; i < 60; i++) {
+    const s = document.createElement('div');
+    s.className = 'star';
+    const size = Math.random() * 2.5 + 1;
+    s.style.cssText = `width:${size}px;height:${size}px;left:${Math.random()*100}%;top:${Math.random()*100}%;animation-delay:${Math.random()*2}s`;
+    wrap.appendChild(s);
+  }
+})();
+
+// ===== 龙珠进度条 =====
+function renderDragonBalls() {
+  const wrap = document.getElementById('dragonballs');
+  wrap.innerHTML = '';
+  const lit = Math.floor((pairsCleared / totalPairs) * 7 + 1e-6);
+  for (let i = 1; i <= 7; i++) {
+    const d = document.createElement('div');
+    d.className = 'dball' + (i <= lit ? ' lit' : '');
+    d.textContent = i; // 几星球
+    d.title = `${i}星球`;
+    wrap.appendChild(d);
+  }
+}
+
+// ===== 初始化棋盘 =====
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function newGame() {
+  const pairCount = (COLS * ROWS) / 2;
+  totalPairs = pairCount;
+  const tiles = [];
+  for (let i = 0; i < pairCount; i++) {
+    const t = i % TILE_TYPES.length;
+    tiles.push(t, t);
+  }
+  shuffle(tiles);
+  grid = [];
+  for (let r = 0; r < ROWS; r++) grid.push(tiles.slice(r * COLS, (r + 1) * COLS));
+  selected = null; score = 0; combo = 0; pairsCleared = 0; timeLeft = TIME_LIMIT;
+  busy = false;
+  updateHUD();
+  renderDragonBalls();
+  renderBoard();
+  ensureMove();
+  clearInterval(timerId);
+  timerId = setInterval(tick, 1000);
+}
+
+function tick() {
+  timeLeft--;
+  document.getElementById('time').textContent = timeLeft;
+  if (timeLeft <= 10) document.getElementById('time').style.color = '#ef5350';
+  if (timeLeft <= 0) {
+    clearInterval(timerId);
+    document.getElementById('loseScore').textContent = score;
+    document.getElementById('loseOverlay').classList.add('show');
+  }
+}
+
+function updateHUD() {
+  document.getElementById('time').textContent = timeLeft;
+  document.getElementById('time').style.color = '';
+  document.getElementById('score').textContent = score;
+  document.getElementById('combo').textContent = combo;
+}
+
+// ===== 渲染 =====
+function renderBoard() {
+  const board = document.getElementById('board');
+  board.style.gridTemplateColumns = `repeat(${COLS}, auto)`;
+  board.innerHTML = '';
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const cell = document.createElement('div');
+      const v = grid[r][c];
+      cell.className = 'cell' + (v === -1 ? ' empty' : '');
+      cell.dataset.r = r; cell.dataset.c = c;
+      if (v !== -1) {
+        cell.textContent = TILE_TYPES[v].icon;
+        cell.title = TILE_TYPES[v].name;
+        cell.addEventListener('click', onCellClick);
+      }
+      board.appendChild(cell);
+    }
+  }
+}
+
+// ===== 连连看核心:路径判定(最多 2 次拐弯)=====
+// 在 (ROWS+2)x(COLS+2) 的扩展网格上判断,外圈视为空地
+function canPass(r, c, endR, endC) {
+  if (r < -1 || r > ROWS || c < -1 || c > COLS) return false;
+  if (r === endR && c === endC) return true;
+  if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return true; // 外圈
+  return grid[r][c] === -1;
+}
+
+function findPath(r1, c1, r2, c2) {
+  // BFS,状态 = (r, c, 方向, 拐弯数),拐弯数 ≤ 2
+  const dirs = [[-1,0],[1,0],[0,-1],[0,1]];
+  const visited = new Map(); // key: r,c,dir -> min turns
+  const queue = [{ r: r1, c: c1, dir: -1, turns: 0, path: [[r1, c1]] }];
+  while (queue.length) {
+    const cur = queue.shift();
+    for (let d = 0; d < 4; d++) {
+      if (cur.dir !== -1 && d === (cur.dir ^ 1)) continue; // 不回头
+      const nr = cur.r + dirs[d][0], nc = cur.c + dirs[d][1];
+      const turns = (cur.dir === -1 || cur.dir === d) ? cur.turns : cur.turns + 1;
+      if (turns > 2) continue;
+      if (!canPass(nr, nc, r2, c2)) continue;
+      const key = nr + ',' + nc + ',' + d;
+      if (visited.has(key) && visited.get(key) <= turns) continue;
+      visited.set(key, turns);
+      const path = cur.path.concat([[nr, nc]]);
+      if (nr === r2 && nc === c2) return path;
+      queue.push({ r: nr, c: nc, dir: d, turns, path });
+    }
+  }
+  return null;
+}
+
+// ===== 交互 =====
+function onCellClick(e) {
+  if (busy) return;
+  const cell = e.currentTarget;
+  const r = +cell.dataset.r, c = +cell.dataset.c;
+  if (selected && selected.r === r && selected.c === c) {
+    cell.classList.remove('selected');
+    selected = null;
+    return;
+  }
+  if (!selected) {
+    selected = { r, c, el: cell };
+    cell.classList.add('selected');
+    return;
+  }
+  const a = selected;
+  const sameType = grid[a.r][a.c] === grid[r][c];
+  const path = sameType ? findPath(a.r, a.c, r, c) : null;
+  if (path) {
+    busy = true;
+    drawLine(path);
+    a.el.classList.add('matched');
+    cell.classList.add('matched');
+    setTimeout(() => {
+      grid[a.r][a.c] = -1; grid[r][c] = -1;
+      combo++;
+      score += 10 + Math.min(combo - 1, 5) * 2; // 连击加分
+      pairsCleared++;
+      selected = null; busy = false;
+      renderBoard();
+      renderDragonBalls();
+      updateHUD();
+      clearLine();
+      if (pairsCleared === totalPairs) return win();
+      if (!findAnyPair()) { shuffleBoard(); }
+    }, 320);
+  } else {
+    combo = 0;
+    updateHUD();
+    cell.classList.add('shake');
+    a.el.classList.add('shake');
+    setTimeout(() => { cell.classList.remove('shake'); }, 300);
+    a.el.classList.remove('selected', 'shake');
+    a.el.classList.remove('shake');
+    selected = { r, c, el: cell };
+    cell.classList.add('selected');
+  }
+}
+
+// ===== 连线绘制 =====
+function drawLine(path) {
+  const wrap = document.getElementById('boardWrap');
+  const board = document.getElementById('board');
+  const canvas = document.getElementById('lineCanvas');
+  canvas.width = wrap.offsetWidth; canvas.height = wrap.offsetHeight;
+  canvas.style.left = '0'; canvas.style.top = '0';
+  const ctx = canvas.getContext('2d');
+  const cellEls = board.children;
+  const first = cellEls[0].getBoundingClientRect();
+  const bw = board.getBoundingClientRect();
+  const wrapRect = wrap.getBoundingClientRect();
+  const cellW = first.width + 6, cellH = first.height + 6; // gap=6
+  const offX = bw.left - wrapRect.left + 10 + first.width / 2;  // board padding=10
+  const offY = bw.top - wrapRect.top + 10 + first.height / 2;
+  ctx.strokeStyle = '#ffd54d';
+  ctx.lineWidth = 4;
+  ctx.shadowColor = '#ffab00'; ctx.shadowBlur = 12;
+  ctx.beginPath();
+  path.forEach(([r, c], i) => {
+    const x = offX + c * cellW, y = offY + r * cellH;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+}
+function clearLine() {
+  const canvas = document.getElementById('lineCanvas');
+  canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+}
+
+// ===== 提示 / 洗牌 =====
+function findAnyPair() {
+  const pos = {};
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+    const v = grid[r][c];
+    if (v === -1) continue;
+    if (pos[v]) {
+      for (const p of pos[v]) {
+        const path = findPath(p.r, p.c, r, c);
+        if (path) return { a: p, b: { r, c }, path };
+      }
+      pos[v].push({ r, c });
+    } else pos[v] = [{ r, c }];
+  }
+  return null;
+}
+
+function shuffleBoard() {
+  const rest = [];
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++)
+    if (grid[r][c] !== -1) rest.push(grid[r][c]);
+  shuffle(rest);
+  let i = 0;
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++)
+    if (grid[r][c] !== -1) grid[r][c] = rest[i++];
+  selected = null;
+  renderBoard();
+}
+
+function ensureMove() {
+  let guard = 0;
+  while (!findAnyPair() && guard++ < 50) shuffleBoard();
+}
+
+document.getElementById('hintBtn').addEventListener('click', () => {
+  const pair = findAnyPair();
+  if (!pair) return;
+  score = Math.max(0, score - 5); // 提示扣 5 分
+  updateHUD();
+  const cells = document.getElementById('board').children;
+  [pair.a, pair.b].forEach(p => cells[p.r * COLS + p.c].classList.add('hint'));
+  setTimeout(() => {
+    [pair.a, pair.b].forEach(p => {
+      const el = cells[p.r * COLS + p.c];
+      if (el) el.classList.remove('hint');
+    });
+  }, 2200);
+});
+
+document.getElementById('shuffleBtn').addEventListener('click', () => {
+  score = Math.max(0, score - 10); // 洗牌扣 10 分
+  shuffleBoard();
+  ensureMove();
+  updateHUD();
+});
+
+document.getElementById('restartBtn').addEventListener('click', restart);
+function restart() {
+  document.getElementById('winOverlay').classList.remove('show');
+  document.getElementById('loseOverlay').classList.remove('show');
+  clearLine();
+  newGame();
+}
+
+function win() {
+  clearInterval(timerId);
+  const timeBonus = timeLeft * 2;
+  score += timeBonus;
+  updateHUD();
+  document.getElementById('finalScore').textContent = score;
+  document.getElementById('finalTime').textContent = TIME_LIMIT - timeLeft;
+  setTimeout(() => document.getElementById('winOverlay').classList.add('show'), 400);
+}
+
+newGame();
+</script>
+</body>
+</html>
